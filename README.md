@@ -29,8 +29,8 @@ justa frente a Ridge y Random Forest.
 |---:|---|---|
 | Evaluado | CatBoost Regressor | Maneja directamente `brand_name`, `model_name` y `variant_name`, sin crear miles de columnas one-hot, y tolera nulos de forma nativa. |
 | Evaluado | LightGBM Regressor | Gradient boosting rápido y eficaz. Es el mejor modelo actual en las tres métricas de test. |
-| Pendiente | XGBoost Regressor | Modelo de gradient boosting muy consolidado y potente; permite una comparación sólida con LightGBM y CatBoost. |
-| Pendiente | ExtraTreesRegressor | Variante de árboles aleatorizados relacionada con Random Forest. Es sencillo de comparar con el mismo preprocesamiento y puede generalizar mejor en algunos casos. |
+| Listo para entrenar | XGBoost Regressor | Modelo de gradient boosting muy consolidado y potente; permite una comparación sólida con LightGBM y CatBoost. |
+| Listo para entrenar | ExtraTreesRegressor | Variante de árboles aleatorizados relacionada con Random Forest. Es sencillo de comparar con el mismo preprocesamiento y puede generalizar mejor en algunos casos. |
 
 También se probará, cuando se seleccione un modelo principal, una versión con
 **regresión por cuantiles**. El objetivo no es sustituir la predicción puntual,
@@ -342,8 +342,8 @@ limitación es que hay pocos ejemplos similares para aprender una tasación fiab
 
 ## Próximos pasos
 
-1. Probar **XGBoost Regressor**, manteniendo la misma partición para compararlo de
-   forma justa con CatBoost y LightGBM.
+1. Entrenar y comparar **XGBoost** y **ExtraTrees** con la misma partición para
+   decidir si superan al actual modelo LightGBM.
 2. Revisar errores por marca, precio y antigüedad; separar coches convencionales de
    lujo si se dispone de suficientes ejemplos premium.
 3. Generar rangos de tasación, no solo un precio puntual, por ejemplo mediante
@@ -369,7 +369,7 @@ orquestador. Puedes elegir uno o varios modelos:
 .\.venv\Scripts\python.exe .\src\main.py --models catboost
 
 # Ejecutar o cargar varios modelos.
-.\.venv\Scripts\python.exe .\src\main.py --models ridge random_forest lightgbm
+.\.venv\Scripts\python.exe .\src\main.py --models extra_trees xgboost lightgbm
 
 # Ejecutar todos los modelos disponibles.
 .\.venv\Scripts\python.exe .\src\main.py --models all
@@ -387,6 +387,11 @@ los datos o los hiperparámetros, usa:
 ```powershell
 .\.venv\Scripts\python.exe .\src\main.py --models lightgbm --retrain
 ```
+
+XGBoost y ExtraTrees se configuran con `RandomizedSearchCV` (30 y 24 candidatos,
+respectivamente; ambos con 3 folds) y seleccionan sus hiperparámetros por MAE.
+Pueden tardar bastante en el primer entrenamiento, especialmente ExtraTrees, por
+el elevado número de variables creado por la codificación *one-hot*.
 
 Los archivos `models/*.joblib` son binarios locales y están excluidos de Git. No se
 deben cargar artefactos `joblib` procedentes de fuentes no fiables.

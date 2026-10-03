@@ -15,10 +15,12 @@ from sklearn.model_selection import train_test_split
 from data_cleaning import clean_data
 from modeling import evaluate_model, load_artifact, print_metrics, save_artifact
 from models.catboost import train_model as train_catboost
+from models.extra_trees import train_model as train_extra_trees
 from models.lightgbm import train_model as train_lightgbm
 from models.linear import train_model as train_linear
 from models.random_forest import train_model as train_random_forest
 from models.ridge import train_model as train_ridge
+from models.xgboost import train_model as train_xgboost
 
 
 DATA_PATH = Path("data/cars_details_merges.csv")
@@ -30,8 +32,10 @@ MODEL_TRAINERS = {
     "linear": ("Linear Regression", train_linear),
     "ridge": ("Ridge Regression", train_ridge),
     "random_forest": ("Random Forest ajustado", train_random_forest),
+    "extra_trees": ("Extra Trees ajustado", train_extra_trees),
     "catboost": ("CatBoost ajustado", train_catboost),
     "lightgbm": ("LightGBM ajustado", train_lightgbm),
+    "xgboost": ("XGBoost ajustado", train_xgboost),
 }
 
 
