@@ -77,9 +77,6 @@ def clean_data(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str], list[str]]:
         ~is_electric & df["Values per Cylinder"].gt(12),
         "Values per Cylinder",
     ] = pd.NA
-    # Eliminar coches con precio mayor a 5 millones de rupias, que son casos atípicos.
-    df = df[df["dynx_totalvalue_x"] <= 5_000_000].copy()
-
     for col in model_categorical_cols:
         cleaned = df[col].astype("string").str.lower().str.strip()
         df[col] = cleaned.mask(cleaned == "").fillna("unknown")

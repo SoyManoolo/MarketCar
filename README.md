@@ -19,18 +19,18 @@ El proyecto ya compara tres familias de modelos:
 2. **Ridge Regression**, una regresión lineal regularizada.
 3. **Random Forest Regressor**, un modelo de árboles no lineal.
 
-## Modelos pendientes de evaluar
+## Modelos evaluados y pendientes
 
 Los próximos experimentos conservarán la misma partición de entrenamiento y test,
 la transformación `log1p(precio)` y las mismas métricas. Así la comparación será
 justa frente a Ridge y Random Forest.
 
-| Prioridad | Modelo | Motivo para probarlo |
+| Estado | Modelo | Motivo para probarlo |
 |---:|---|---|
-| 1 | CatBoost Regressor | Está diseñado para datos tabulares con muchas categorías. Puede usar directamente `brand_name`, `model_name` y `variant_name`, sin crear miles de columnas one-hot, y tolera nulos de forma nativa. |
-| 2 | LightGBM Regressor | Gradient boosting rápido y eficaz, especialmente interesante si el futuro conjunto español crece mucho. |
-| 3 | XGBoost Regressor | Modelo de gradient boosting muy consolidado y potente; permite una comparación sólida con LightGBM y CatBoost. |
-| 4 | ExtraTreesRegressor | Variante de árboles aleatorizados relacionada con Random Forest. Es sencillo de comparar con el mismo preprocesamiento y puede generalizar mejor en algunos casos. |
+| Evaluado | CatBoost Regressor | Maneja directamente `brand_name`, `model_name` y `variant_name`, sin crear miles de columnas one-hot, y tolera nulos de forma nativa. |
+| Evaluado | LightGBM Regressor | Gradient boosting rápido y eficaz. Es el mejor modelo actual en las tres métricas de test. |
+| Pendiente | XGBoost Regressor | Modelo de gradient boosting muy consolidado y potente; permite una comparación sólida con LightGBM y CatBoost. |
+| Pendiente | ExtraTreesRegressor | Variante de árboles aleatorizados relacionada con Random Forest. Es sencillo de comparar con el mismo preprocesamiento y puede generalizar mejor en algunos casos. |
 
 También se probará, cuando se seleccione un modelo principal, una versión con
 **regresión por cuantiles**. El objetivo no es sustituir la predicción puntual,
@@ -198,6 +198,8 @@ coches restantes.
 | Linear Regression | ₹61.202 | ₹85.497 | ₹111.528 | ₹171.312 | 0,973 | 0,937 |
 | Ridge (`alpha=1`) | ₹65.401 | ₹81.326 | ₹117.507 | **₹160.025** | 0,970 | **0,945** |
 | Random Forest ajustado | ₹39.712 | **₹80.044** | ₹83.457 | ₹167.063 | 0,985 | 0,940 |
+| CatBoost ajustado | ₹49.180 | **₹71.321** | ₹75.224 | **₹147.175** | 0,988 | **0,953** |
+| LightGBM ajustado | ₹45.724 | **₹70.137** | ₹77.822 | **₹143.425** | 0,987 | **0,956** |
 
 ### Efecto cuantificado de limitar el alcance
 
@@ -219,10 +221,52 @@ estadística formal ni autoriza a usar el modelo con vehículos premium. Para af
 significación estadística haría falta calcular intervalos de confianza, por ejemplo
 con *bootstrap* de los errores de test.
 
-Dentro del alcance generalista, Random Forest obtiene el menor MAE, pero solo por
-₹1.282 frente a Ridge. Ridge conserva el mejor RMSE y R², por lo que sigue siendo
-el modelo más estable; Random Forest es un candidato competitivo para minimizar el
-error medio en coches convencionales.
+Dentro del alcance generalista, LightGBM es el mejor modelo actual: obtiene el
+menor MAE, el menor RMSE y el mayor R² en test. Frente a CatBoost, reduce el MAE
+en ₹1.184, el RMSE en ₹3.750 y eleva R² de 0,953 a 0,956. La mejora es pequeña,
+pero consistente en las tres métricas.
+
+### Configuración ganadora de LightGBM
+
+La búsqueda aleatoria de 30 configuraciones con validación cruzada de tres folds
+seleccionó los siguientes parámetros:
+
+```python
+LGBMRegressor(
+    n_estimators=800,
+    learning_rate=0.05,
+    num_leaves=63,
+    max_depth=-1,
+    min_child_samples=10,
+    subsample=0.85,
+    colsample_bytree=0.7,
+    reg_lambda=0,
+)
+```
+
+El MAE medio de validación cruzada fue **₹69.244**, frente a **₹70.137** en el
+conjunto de test: una diferencia de solo ₹893. Esta cercanía es una señal favorable
+de que los hiperparámetros elegidos sobre entrenamiento se comportan de manera
+similar en datos no vistos.
+
+El modelo entrenado se guarda en `models/lightgbm_generalista.joblib`, junto con
+los parámetros seleccionados, las métricas y la lista de variables esperadas.
+
+### Configuración de CatBoost
+
+CatBoost se entrenó una sola vez con la configuración seleccionada previamente por
+validación cruzada:
+
+```python
+CatBoostRegressor(
+    iterations=1000,
+    depth=10,
+    learning_rate=0.05,
+    l2_leaf_reg=3,
+    random_strength=0.5,
+    bagging_temperature=2,
+)
+```
 
 ## Ajuste de Random Forest
 
@@ -298,8 +342,8 @@ limitación es que hay pocos ejemplos similares para aprender una tasación fiab
 
 ## Próximos pasos
 
-1. Probar **CatBoost Regressor**, manteniendo la misma partición para comparar de
-   forma justa. CatBoost puede manejar categorías y nulos sin one-hot encoding.
+1. Probar **XGBoost Regressor**, manteniendo la misma partición para compararlo de
+   forma justa con CatBoost y LightGBM.
 2. Revisar errores por marca, precio y antigüedad; separar coches convencionales de
    lujo si se dispone de suficientes ejemplos premium.
 3. Generar rangos de tasación, no solo un precio puntual, por ejemplo mediante
@@ -309,14 +353,40 @@ limitación es que hay pocos ejemplos similares para aprender una tasación fiab
 5. Validar con particiones temporales y mantener un conjunto final sin usar durante
    el ajuste de hiperparámetros.
 
-## Ejecución
+## Ejecución y modelos guardados
 
 Desde la raíz del proyecto:
 
 ```powershell
-.\.venv\Scripts\python.exe .\src\main.py
+.\.venv\Scripts\python.exe .\src\main.py --models lightgbm
 ```
 
-El script ejecuta la búsqueda de Ridge, entrena los modelos y muestra sus métricas
-junto con el análisis de errores por tramo de precios. Random Forest puede tardar
-varios minutos, dependiendo del equipo.
+Cada modelo tiene su propio módulo en `src/models/` y `main.py` actúa como
+orquestador. Puedes elegir uno o varios modelos:
+
+```powershell
+# Ejecutar o cargar un único modelo.
+.\.venv\Scripts\python.exe .\src\main.py --models catboost
+
+# Ejecutar o cargar varios modelos.
+.\.venv\Scripts\python.exe .\src\main.py --models ridge random_forest lightgbm
+
+# Ejecutar todos los modelos disponibles.
+.\.venv\Scripts\python.exe .\src\main.py --models all
+```
+
+Después del primer entrenamiento, cada modelo se guarda como un artefacto `joblib`
+en `models/`, por ejemplo `models/lightgbm_generalista.joblib`. El artefacto incluye
+el modelo entrenado, su pipeline de preprocesamiento, la lista de variables, el
+límite de precio y las métricas obtenidas.
+
+En ejecuciones posteriores, `main.py` carga el archivo existente y evalúa el modelo
+sin reentrenarlo. Para forzar un entrenamiento nuevo, por ejemplo tras modificar
+los datos o los hiperparámetros, usa:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\main.py --models lightgbm --retrain
+```
+
+Los archivos `models/*.joblib` son binarios locales y están excluidos de Git. No se
+deben cargar artefactos `joblib` procedentes de fuentes no fiables.

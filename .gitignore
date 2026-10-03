@@ -11,3 +11,7 @@ wheels/
 
 # Local datasets (descargados por separado; no se versionan)
 data/*.csv
+
+# Modelos entrenados locales
+models/*.joblib
+catboost_info/
