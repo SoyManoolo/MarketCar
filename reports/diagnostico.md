@@ -36,6 +36,21 @@ La limpieza común aplica reglas por fila. Imputación, escalado y one-hot se aj
 
 El corte de 5 millones se aplica al precio real antes de dividir. Define una población condicionada al objetivo; no proporciona un detector que decida si un coche nuevo está dentro del alcance. No equivale a excluir marcas premium.
 
+## Problemas comprobados en la limpieza
+
+| Problema | Filas |
+| --- | --- |
+| Length: comas convertidas a nulo | 344 |
+| Width: comas convertidas a nulo | 344 |
+| Height: comas convertidas a nulo | 346 |
+| Wheel Base: comas convertidas a nulo | 635 |
+| Max Torque: texto con unidad kg | 1364 |
+| Max Power: texto con kW (a veces también bhp) | 19 |
+| Kerb Weight: texto con comas | 107 |
+| Kerb Weight: resultado inferior a 100 kg | 53 |
+
+Recuentos sobre los 37.476 coches generalistas; las filas pueden aparecer en varias categorías. extract_first_number no normaliza unidades: el par en kgm queda mezclado con Nm. La potencia incluye algunos textos solo en kW y otros con bhp primero; el contador no significa que todos los 19 casos estén mal convertidos. Las dimensiones como `3,690 mm` se convierten en nulos; parse_weight divide `1,060 kg` en 1 y 60 y devuelve 30,5. Estas son anomalías del procesamiento, no evidencia de su impacto causal en el MAE. Corregir separadores y normalizar unidades con reglas verificadas, revisar valores físicamente improbables y volver a entrenar antes de comparar la mejora con validación de entrenamiento.
+
 ## Incertidumbre de la ventaja
 
 | Comparación (LightGBM − otro) | Delta MAE INR | IC95 inferior INR | IC95 superior INR |

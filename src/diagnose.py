@@ -48,6 +48,37 @@ def bootstrap_difference(first, second, iterations=3000):
     return difference.mean(), *np.quantile(means, [0.025, 0.975])
 
 
+def cleaning_diagnostics(raw, cleaned):
+    """Cuenta problemas de formato sobre la población generalista evaluada."""
+    original = raw.loc[cleaned.index]
+    rows = []
+    for column in ["Length", "Width", "Height", "Wheel Base"]:
+        comma = original[column].astype(str).str.contains(",", regex=False)
+        rows.append({"Problema": f"{column}: comas convertidas a nulo",
+                     "Filas": int((comma & cleaned[column].isna()).sum())})
+    rows.extend([
+        {"Problema": "Max Torque: texto con unidad kg", "Filas": int(
+            original["Max Torque"].astype(str).str.contains("kg", case=False).sum())},
+        {"Problema": "Max Power: texto con kW (a veces también bhp)", "Filas": int(
+            original["Max Power"].astype(str).str.contains("kw", case=False).sum())},
+        {"Problema": "Kerb Weight: texto con comas", "Filas": int(
+            original["Kerb Weight"].astype(str).str.contains(",", regex=False).sum())},
+        {"Problema": "Kerb Weight: resultado inferior a 100 kg", "Filas": int(
+            cleaned["Kerb Weight"].lt(100).sum())},
+    ])
+    return ("## Problemas comprobados en la limpieza\n\n" + table(pd.DataFrame(rows)) +
+            "\n\nRecuentos sobre los 37.476 coches generalistas; las filas pueden aparecer "
+            "en varias categorías. extract_first_number no normaliza unidades: el par en "
+            "kgm queda mezclado con Nm. La potencia incluye algunos textos solo en kW "
+            "y otros con bhp primero; el contador no significa que todos los 19 casos "
+            "estén mal convertidos. Las dimensiones como `3,690 mm` se convierten en "
+            "nulos; parse_weight divide `1,060 kg` en 1 y 60 y devuelve 30,5. "
+            "Estas son anomalías del procesamiento, no evidencia de su impacto causal "
+            "en el MAE. Corregir separadores y normalizar unidades con reglas verificadas, "
+            "revisar valores físicamente improbables y volver a entrenar antes de comparar "
+            "la mejora con validación de entrenamiento.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cv", action="store_true",
@@ -122,6 +153,8 @@ def main():
                    "El corte de 5 millones se aplica al precio real antes de dividir. Define una "
                    "población condicionada al objetivo; no proporciona un detector que decida "
                    "si un coche nuevo está dentro del alcance. No equivale a excluir marcas premium."])
+    # Las columnas necesarias ya están limpias en la partición del modelo.
+    report.append(cleaning_diagnostics(raw, pd.concat([train, test])))
 
     pairs = []
     base_error = np.abs(predictions["lightgbm"] - actual)

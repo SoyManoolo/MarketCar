@@ -13,24 +13,28 @@ Construir un flujo reproducible que, a partir de características como marca,
 modelo, versión, año, kilometraje, combustible, potencia, ubicación y equipamiento,
 estime un precio de mercado.
 
-El proyecto ya compara tres familias de modelos:
+El proyecto ya compara siete modelos:
 
 1. **Linear Regression**, como línea base sencilla.
 2. **Ridge Regression**, una regresión lineal regularizada.
 3. **Random Forest Regressor**, un modelo de árboles no lineal.
+4. **Extra Trees Regressor**.
+5. **CatBoost Regressor**.
+6. **LightGBM Regressor**.
+7. **XGBoost Regressor**.
 
 ## Modelos evaluados y pendientes
 
-Los próximos experimentos conservarán la misma partición de entrenamiento y test,
-la transformación `log1p(precio)` y las mismas métricas. Así la comparación será
-justa frente a Ridge y Random Forest.
+Los experimentos conservan la misma partición de entrenamiento y test y las mismas
+métricas en rupias. Los seis modelos de scikit-learn usan `log1p(precio)`; CatBoost
+se ajusta directamente al precio. La comparación incluye esa diferencia de objetivo.
 
 | Estado | Modelo | Motivo para probarlo |
 |---:|---|---|
 | Evaluado | CatBoost Regressor | Maneja directamente `brand_name`, `model_name` y `variant_name`, sin crear miles de columnas one-hot, y tolera nulos de forma nativa. |
 | Evaluado | LightGBM Regressor | Gradient boosting rápido y eficaz. Es el mejor modelo actual en las tres métricas de test. |
-| Listo para entrenar | XGBoost Regressor | Modelo de gradient boosting muy consolidado y potente; permite una comparación sólida con LightGBM y CatBoost. |
-| Listo para entrenar | ExtraTreesRegressor | Variante de árboles aleatorizados relacionada con Random Forest. Es sencillo de comparar con el mismo preprocesamiento y puede generalizar mejor en algunos casos. |
+| Evaluado | XGBoost Regressor | Resultados muy próximos a LightGBM; la diferencia de MAE en test no es concluyente en el bootstrap pareado. |
+| Evaluado | ExtraTreesRegressor | Variante de árboles aleatorizados relacionada con Random Forest; presenta la mayor brecha entre entrenamiento y test. |
 
 También se probará, cuando se seleccione un modelo principal, una versión con
 **regresión por cuantiles**. El objetivo no es sustituir la predicción puntual,
@@ -138,8 +142,9 @@ evita errores si aparece en test una categoría que no existía en entrenamiento
 
 ## Transformación del precio
 
-Todos los modelos se entrenan con `log1p(precio)` y sus predicciones se devuelven a
-rupias con `expm1`. Esto reduce el peso de los precios muy altos durante el
+Los seis modelos de scikit-learn se entrenan con `log1p(precio)` y sus predicciones
+se devuelven a rupias con `expm1`. CatBoost se entrena directamente en rupias.
+La transformación logarítmica reduce el peso de los precios muy altos durante el
 entrenamiento y hace la optimización más estable. Las métricas finales, sin embargo,
 se calculan siempre en rupias reales.
 
@@ -198,8 +203,10 @@ coches restantes.
 | Linear Regression | ₹61.202 | ₹85.497 | ₹111.528 | ₹171.312 | 0,973 | 0,937 |
 | Ridge (`alpha=1`) | ₹65.401 | ₹81.326 | ₹117.507 | **₹160.025** | 0,970 | **0,945** |
 | Random Forest ajustado | ₹39.712 | **₹80.044** | ₹83.457 | ₹167.063 | 0,985 | 0,940 |
+| Extra Trees ajustado | ₹21.276 | ₹79.256 | ₹46.256 | ₹163.265 | 0,995 | 0,943 |
 | CatBoost ajustado | ₹49.180 | **₹71.321** | ₹75.224 | **₹147.175** | 0,988 | **0,953** |
 | LightGBM ajustado | ₹45.724 | **₹70.137** | ₹77.822 | **₹143.425** | 0,987 | **0,956** |
+| XGBoost ajustado | ₹52.166 | ₹70.960 | ₹90.869 | ₹144.833 | 0,982 | 0,955 |
 
 ### Efecto cuantificado de limitar el alcance
 
@@ -342,8 +349,8 @@ limitación es que hay pocos ejemplos similares para aprender una tasación fiab
 
 ## Próximos pasos
 
-1. Entrenar y comparar **XGBoost** y **ExtraTrees** con la misma partición para
-   decidir si superan al actual modelo LightGBM.
+1. Corregir los separadores de miles en dimensiones y pesos y normalizar las
+   unidades de potencia y par; reentrenar y comparar sobre validación de entrenamiento.
 2. Revisar errores por marca, precio y antigüedad; separar coches convencionales de
    lujo si se dispone de suficientes ejemplos premium.
 3. Generar rangos de tasación, no solo un precio puntual, por ejemplo mediante
@@ -395,3 +402,18 @@ el elevado número de variables creado por la codificación *one-hot*.
 
 Los archivos `models/*.joblib` son binarios locales y están excluidos de Git. No se
 deben cargar artefactos `joblib` procedentes de fuentes no fiables.
+
+## Diagnóstico reproducible de los siete modelos
+
+El [informe de diagnóstico](reports/diagnostico.md) reproduce las métricas, compara
+LightGBM y XGBoost en folds comunes, calcula un bootstrap pareado y revisa errores
+por precio, marca y año, categorías nuevas, duplicados y problemas de limpieza.
+
+```powershell
+.\.venv\Scripts\python.exe .\src\diagnose.py --cv
+```
+
+LightGBM conserva el mejor resultado observado, pero la ventaja de ₹823 frente a
+XGBoost tiene un intervalo bootstrap del 95 % de −₹1.793 a +₹144 (LightGBM menos
+XGBoost), que incluye cero. La prioridad es corregir la preparación de datos y
+reservar una evaluación independiente antes de afirmar el rendimiento final.
