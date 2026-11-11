@@ -15,9 +15,6 @@ dependencies = [
     "xgboost>=3.4.1",
 ]
 
-[project.scripts]
-marketcar = "marketcar:main"
-
 [build-system]
 requires = ["uv_build>=0.12.3,<0.13.0"]
 build-backend = "uv_build"
