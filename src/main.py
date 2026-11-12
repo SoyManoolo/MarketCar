@@ -13,7 +13,15 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from data_cleaning import clean_data
-from modeling import evaluate_model, load_artifact, print_metrics, save_artifact
+from modeling import (
+    build_reproducibility_context,
+    check_artifact_compatibility,
+    evaluate_model,
+    load_artifact,
+    preserve_historical_artifacts,
+    print_metrics,
+    save_artifact,
+)
 from models.catboost import train_model as train_catboost
 from models.extra_trees import train_model as train_extra_trees
 from models.lightgbm import train_model as train_lightgbm
@@ -71,10 +79,10 @@ def requested_models(models: list[str]) -> list[str]:
     return list(dict.fromkeys(names))
 
 
-def load_data():
-    """Carga, limpia y limita los datos al alcance del tasador generalista."""
-    df = pd.read_csv(DATA_PATH, low_memory=False)
-    df, features, categorical_cols = clean_data(df)
+def load_data_with_context(data_path: Path = DATA_PATH):
+    """Carga, limpia y divide los datos junto con su contexto de reproducibilidad."""
+    raw_df = pd.read_csv(data_path, low_memory=False)
+    df, features, categorical_cols = clean_data(raw_df)
 
     premium_count = int((df[TARGET] > MAINSTREAM_PRICE_LIMIT).sum())
     df = df[df[TARGET] <= MAINSTREAM_PRICE_LIMIT].copy()
@@ -95,6 +103,22 @@ def load_data():
         column for column in X_train.columns if column not in categorical_features
     ]
 
+    reproducibility_context = build_reproducibility_context(
+        X=X,
+        y=y,
+        X_train=X_train,
+        X_test=X_test,
+        features=features,
+        categorical_features=categorical_features,
+        numeric_features=numeric_features,
+        target=TARGET,
+        mainstream_price_limit=MAINSTREAM_PRICE_LIMIT,
+        random_state=RANDOM_STATE,
+        test_size=0.2,
+        data_path=data_path,
+        raw_df=raw_df,
+    )
+
     print(
         f"Datos generalistas: {len(df):,} coches. "
         f"Vehículos premium fuera de alcance: {premium_count:,}."
@@ -107,17 +131,52 @@ def load_data():
         X_test,
         y_train,
         y_test,
+        reproducibility_context,
     )
 
 
-def artifact_is_compatible(artifact, features: list[str]) -> bool:
-    """Comprueba que un modelo guardado coincide con el alcance actual."""
-    metadata = artifact.get("metadata", {})
+def load_data():
+    """Carga, limpia y limita los datos al alcance del tasador generalista."""
+    (
+        features,
+        categorical_features,
+        numeric_features,
+        X_train,
+        X_test,
+        y_train,
+        y_test,
+        _,
+    ) = load_data_with_context(DATA_PATH)
     return (
-        artifact.get("features") == features
-        and metadata.get("target") == TARGET
-        and metadata.get("mainstream_price_limit") == MAINSTREAM_PRICE_LIMIT
+        features,
+        categorical_features,
+        numeric_features,
+        X_train,
+        X_test,
+        y_train,
+        y_test,
     )
+
+
+def artifact_is_compatible(
+    artifact,
+    features: list[str],
+    *,
+    categorical_features: list[str] | None = None,
+    numeric_features: list[str] | None = None,
+    reproducibility_context: dict[str, object] | None = None,
+) -> bool:
+    """Comprueba que un modelo guardado coincide con los datos y la limpieza actuales."""
+    compatible, _ = check_artifact_compatibility(
+        artifact,
+        features=features,
+        categorical_features=categorical_features,
+        numeric_features=numeric_features,
+        reproducibility_context=reproducibility_context,
+        target=TARGET,
+        mainstream_price_limit=MAINSTREAM_PRICE_LIMIT,
+    )
+    return compatible
 
 
 def print_summary(results: list[dict[str, object]]) -> None:
@@ -139,6 +198,7 @@ def main() -> None:
     args = parse_args()
     selected_models = requested_models(args.models)
     args.artifacts_dir.mkdir(parents=True, exist_ok=True)
+    preserve_historical_artifacts(args.artifacts_dir)
 
     (
         features,
@@ -148,7 +208,8 @@ def main() -> None:
         X_test,
         y_train,
         y_test,
-    ) = load_data()
+        reproducibility_context,
+    ) = load_data_with_context()
 
     summary_rows: list[dict[str, object]] = []
     for key in selected_models:
@@ -157,12 +218,13 @@ def main() -> None:
         loaded_from_artifact = artifact_path.exists() and not args.retrain
 
         if loaded_from_artifact:
-            artifact = load_artifact(artifact_path)
-            if not artifact_is_compatible(artifact, features):
-                raise ValueError(
-                    f"{artifact_path} no coincide con las variables o el alcance actual. "
-                    "Ejecuta de nuevo con --retrain."
-                )
+            artifact = load_artifact(
+                artifact_path,
+                features=features,
+                categorical_features=categorical_features,
+                numeric_features=numeric_features,
+                reproducibility_context=reproducibility_context,
+            )
             model = artifact["model"]
             print(f"\nCargado: {artifact_path}")
         else:
@@ -188,6 +250,7 @@ def main() -> None:
                 model=model,
                 features=features,
                 categorical_features=categorical_features,
+                numeric_features=numeric_features,
                 metrics=metrics,
                 metadata={
                     "target": TARGET,
@@ -196,6 +259,7 @@ def main() -> None:
                     "test_rows": len(X_test),
                     "training": training_metadata,
                 },
+                reproducibility_context=reproducibility_context,
             )
             print(f"Guardado: {artifact_path}")
         print_metrics(display_name, metrics)
