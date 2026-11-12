@@ -13,5 +13,6 @@ wheels/
 data/*.csv
 
 # Modelos entrenados locales
+models/
 models/*.joblib
 catboost_info/

@@ -12,6 +12,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -75,6 +76,41 @@ def with_log_target(regressor: Any) -> TransformedTargetRegressor:
         func=np.log1p,
         inverse_func=np.expm1,
     )
+
+
+class TargetTransformedModel(BaseEstimator, RegressorMixin):
+    """Envuelve un estimador ya ajustado aplicando la inversa del objetivo al predecir."""
+
+    def __init__(
+        self,
+        estimator: Any,
+        *,
+        target_transform: str = "log1p",
+        max_log_prediction: float = 25.0,
+        clip_non_negative: bool = True,
+    ) -> None:
+        self.estimator = estimator
+        self.target_transform = target_transform
+        self.max_log_prediction = max_log_prediction
+        self.clip_non_negative = clip_non_negative
+
+    def fit(self, X, y=None):
+        """Conserva el estimador ya entrenado para compatibilidad con scikit-learn."""
+        return self
+
+    def predict(self, X) -> np.ndarray:
+        """Predice siempre en la escala original de rupias (INR)."""
+        raw_pred = np.asarray(self.estimator.predict(X), dtype=float)
+        if self.target_transform == "log1p":
+            pred = np.expm1(np.clip(raw_pred, -20.0, self.max_log_prediction))
+        elif self.target_transform == "raw":
+            pred = raw_pred
+        else:
+            raise ValueError(f"Transformación de objetivo no soportada: {self.target_transform!r}")
+
+        if self.clip_non_negative:
+            pred = np.maximum(pred, 0.0)
+        return pred
 
 
 def calculate_metrics(y_true, predictions) -> dict[str, float]:
@@ -252,7 +288,11 @@ def extract_hyperparameters(
         recorded["selected_params"] = _sanitize_param_value(training_metadata["parameters"])
 
     estimator = model
+    if isinstance(estimator, TargetTransformedModel):
+        recorded["target_transform"] = estimator.target_transform
+        estimator = estimator.estimator
     if isinstance(estimator, TransformedTargetRegressor):
+        recorded["target_transform"] = "log1p"
         estimator = getattr(estimator, "regressor_", None) or estimator.regressor
     if isinstance(estimator, Pipeline) and "model" in estimator.named_steps:
         estimator = estimator.named_steps["model"]
@@ -283,10 +323,11 @@ def build_reproducibility_context(
     data_path: Path | None = None,
     raw_df: pd.DataFrame | None = None,
     cleaning_module: Any = data_cleaning,
+    execution_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Construye el contexto completo de reproducibilidad del experimento."""
     cleaning_info = get_cleaning_version(cleaning_module)
-    return {
+    context: dict[str, Any] = {
         "target": target,
         "mainstream_price_limit": mainstream_price_limit,
         "random_state": int(random_state),
@@ -312,6 +353,9 @@ def build_reproducibility_context(
         },
         "library_versions": get_library_versions(),
     }
+    if execution_metadata is not None:
+        context["execution"] = _sanitize_param_value(execution_metadata)
+    return context
 
 
 def check_artifact_compatibility(
